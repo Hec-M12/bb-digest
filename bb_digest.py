@@ -104,7 +104,7 @@ def parse_ics(text):
         uid = ev.get("UID", ("", {}))[0]
         m = re.search(r"(_\d+_\d+)$", uid)
         items.append({
-            "title": ev.get("SUMMARY", ("(sin título)", {}))[0].replace("\\,", ",").replace("\;", ";"),
+            "title": ev.get("SUMMARY", ("(sin título)", {}))[0].replace("\\,", ",").replace("\\;", ";"),
             "course": None,
             "due": parse_ics_dt(val, params.get("TZID")),
             "status": "unknown",
