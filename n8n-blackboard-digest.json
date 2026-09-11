@@ -1,0 +1,50 @@
+{
+  "name": "Blackboard · tareas pendientes (ICS, sin credenciales)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "0 7 * * *" } ] }
+      },
+      "name": "Todos los días 7am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "PEGA_AQUI_TU_LINK_SHARE_CALENDAR/learn.ics",
+        "options": { "response": { "response": { "responseFormat": "text" } } }
+      },
+      "name": "Bajar calendario ICS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsea el ICS de Blackboard y arma el mensaje con lo que vence en los próximos DIAS días.\nconst DIAS = 7;\nconst TZ = 'America/New_York'; // zona horaria de la universidad\nconst raw = $input.first().json.data || '';\n\n// RFC 5545: una línea que empieza con espacio continúa la anterior\nconst lines = [];\nfor (const ln of raw.replace(/\\r\\n/g, '\\n').split('\\n')) {\n  if ((ln.startsWith(' ') || ln.startsWith('\\t')) && lines.length) lines[lines.length - 1] += ln.slice(1);\n  else lines.push(ln);\n}\n\nconst events = [];\nlet cur = null;\nfor (const ln of lines) {\n  if (ln === 'BEGIN:VEVENT') cur = {};\n  else if (ln === 'END:VEVENT') { if (cur) events.push(cur); cur = null; }\n  else if (cur && ln.includes(':')) {\n    const i = ln.indexOf(':');\n    const key = ln.slice(0, i).split(';')[0];\n    cur[key] = ln.slice(i + 1);\n  }\n}\n\n// 'ahora' como hora de pared en TZ, para comparar contra los DTSTART (que vienen en hora local de la uni)\nconst wall = (d) => new Date(new Date(d).toLocaleString('en-US', { timeZone: TZ }));\nconst now = wall(new Date());\nconst horizon = new Date(now.getTime() + DIAS * 86400000);\nconst parse = (v) => v.endsWith('Z')\n  ? wall(Date.UTC(+v.slice(0,4), +v.slice(4,6)-1, +v.slice(6,8), +v.slice(9,11), +v.slice(11,13)))\n  : new Date(+v.slice(0,4), +v.slice(4,6)-1, +v.slice(6,8), +(v.slice(9,11)||0), +(v.slice(11,13)||0));\n\nconst dias = ['dom','lun','mar','mié','jue','vie','sáb'];\nconst meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];\nconst fmt = (d) => {\n  let h = d.getHours(), m = String(d.getMinutes()).padStart(2, '0'), ap = h >= 12 ? 'PM' : 'AM';\n  h = h % 12 || 12;\n  return `${dias[d.getDay()]} ${d.getDate()} ${meses[d.getMonth()]} ${h}:${m} ${ap}`;\n};\nconst emoji = (d) => {\n  const days = Math.floor((d - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);\n  return days <= 0 ? '🔴' : days <= 2 ? '🟠' : '🟡';\n};\n\nconst upcoming = events\n  .filter(e => e.DTSTART)\n  .map(e => ({ title: e.SUMMARY || '(sin título)', due: parse(e.DTSTART) }))\n  .filter(e => e.due >= now && e.due <= horizon)\n  .sort((a, b) => a.due - b.due);\n\nconst head = `📚 Blackboard · ${dias[now.getDay()]} ${now.getDate()} ${meses[now.getMonth()]} · próximos ${DIAS} días`;\nconst body = upcoming.length\n  ? upcoming.map(e => `${emoji(e.due)} ${fmt(e.due)} · ${e.title}`).join('\\n')\n  : 'Nada por entregar en esta ventana 🎉';\n\nreturn [{ json: { message: `${head}\\n\\n${body}`, count: upcoming.length, items: upcoming } }];"
+      },
+      "name": "Armar mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "chatId": "PEGA_AQUI_TU_CHAT_ID",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "name": "Telegram (o cambialo por WhatsApp)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [720, 0]
+    }
+  ],
+  "connections": {
+    "Todos los días 7am": { "main": [[{ "node": "Bajar calendario ICS", "type": "main", "index": 0 }]] },
+    "Bajar calendario ICS": { "main": [[{ "node": "Armar mensaje", "type": "main", "index": 0 }]] },
+    "Armar mensaje": { "main": [[{ "node": "Telegram (o cambialo por WhatsApp)", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

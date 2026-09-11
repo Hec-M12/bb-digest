@@ -1,0 +1,11 @@
+# Nunca subas tu calendario real: el link y el archivo son tu credencial.
+*.ics
+!sample.ics
+
+.env
+.env.*
+__pycache__/
+*.py[cod]
+.DS_Store
+.venv/
+venv/

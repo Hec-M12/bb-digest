@@ -1,0 +1,85 @@
+name: Digest diario de Blackboard
+
+on:
+  schedule:
+    # 11:00 UTC = 7:00 AM en la costa este de EE. UU. durante el horario de verano (EDT).
+    # En invierno (EST) cae a las 6:00 AM. Si lo querés clavado a las 7, cambialo a 12
+    # cuando arranque el horario estandar en noviembre.
+    - cron: "0 11 * * *"
+  workflow_dispatch:
+    inputs:
+      ics_url:
+        description: "URL del ICS a usar en esta corrida (dejalo vacio para usar el secret ICS_URL)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bb-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Revisar que esten los secrets
+        env:
+          ICS_URL: ${{ secrets.ICS_URL }}
+          ICS_URL_INPUT: ${{ inputs.ics_url }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          faltan=""
+          [ -n "$ICS_URL_INPUT" ] || [ -n "$ICS_URL" ] || faltan="$faltan ICS_URL"
+          [ -n "$TG_BOT_TOKEN" ] || faltan="$faltan TG_BOT_TOKEN"
+          [ -n "$TG_CHAT_ID" ] || faltan="$faltan TG_CHAT_ID"
+          if [ -n "$faltan" ]; then
+            echo "::error::Faltan secrets:$faltan . Cargalos en Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "Los tres estan cargados."
+
+      - name: Correr las pruebas
+        run: python test_bb_digest.py
+
+      - name: Mandar el digest
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          ICS_URL: ${{ secrets.ICS_URL }}
+          ICS_URL_INPUT: ${{ inputs.ics_url }}
+        run: |
+          url="${ICS_URL_INPUT:-$ICS_URL}"
+          python bb_digest.py --ics "$url" --days 7 --send telegram
+
+  # GitHub apaga los workflows programados a los 60 dias sin actividad en el repo.
+  # Este job commitea .keepalive una vez por semana (lunes) para que el cron no muera.
+  # Nota: un push hecho con el GITHUB_TOKEN por diseno NO dispara otros workflows,
+  # asi que esto no arma un bucle.
+  keepalive:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tocar .keepalive los lunes
+        run: |
+          if [ "$(date -u +%u)" != "1" ]; then
+            echo "Hoy no es lunes, no hay nada que hacer."
+            exit 0
+          fi
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .keepalive
+          git diff --staged --quiet && { echo "Sin cambios."; exit 0; }
+          git commit -m "chore: keepalive del cron"
+          git push
