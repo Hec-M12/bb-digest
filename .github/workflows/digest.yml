@@ -31,6 +31,7 @@ jobs:
           python-version: "3.12"
 
       - name: Revisar que esten los secrets
+        id: secrets
         env:
           ICS_URL: ${{ secrets.ICS_URL }}
           ICS_URL_INPUT: ${{ inputs.ics_url }}
@@ -42,15 +43,27 @@ jobs:
           [ -n "$TG_BOT_TOKEN" ] || faltan="$faltan TG_BOT_TOKEN"
           [ -n "$TG_CHAT_ID" ] || faltan="$faltan TG_CHAT_ID"
           if [ -n "$faltan" ]; then
+            echo "configurados=false" >> "$GITHUB_OUTPUT"
+            # Este repo es la PLANTILLA: no tiene secrets cargados a proposito.
+            # En una corrida programada eso no es una falla, no hay nada que mandar.
+            if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+              echo "::notice::No hay secrets configurados ($faltan ). No hay digest que mandar: esto es lo esperado en el repo plantilla. Tu fork corre con TUS secrets."
+              echo "Salteando el envio. Las pruebas igual corren para verificar que el codigo sirve."
+              exit 0
+            fi
+            # Corrida manual: aca SI queremos el error rojo, porque es el paso
+            # que el README manda a hacer despues de cargar los secrets.
             echo "::error::Faltan secrets:$faltan . Cargalos en Settings > Secrets and variables > Actions."
             exit 1
           fi
+          echo "configurados=true" >> "$GITHUB_OUTPUT"
           echo "Los tres estan cargados."
 
       - name: Correr las pruebas
         run: python test_bb_digest.py
 
       - name: Mandar el digest
+        if: steps.secrets.outputs.configurados == 'true'
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
