@@ -37,6 +37,7 @@ jobs:
           ICS_URL_INPUT: ${{ inputs.ics_url }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          REPO_PLANTILLA: Hec-M12/bb-digest
         run: |
           faltan=""
           [ -n "$ICS_URL_INPUT" ] || [ -n "$ICS_URL" ] || faltan="$faltan ICS_URL"
@@ -44,15 +45,16 @@ jobs:
           [ -n "$TG_CHAT_ID" ] || faltan="$faltan TG_CHAT_ID"
           if [ -n "$faltan" ]; then
             echo "configurados=false" >> "$GITHUB_OUTPUT"
-            # Este repo es la PLANTILLA: no tiene secrets cargados a proposito.
-            # En una corrida programada eso no es una falla, no hay nada que mandar.
-            if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            # Hec-M12/bb-digest es la PLANTILLA publica: no tiene secrets cargados
+            # a proposito, para no dejar credenciales en un repo abierto. Ahi la
+            # falta de secrets no es una falla, simplemente no hay nada que mandar.
+            if [ "$GITHUB_REPOSITORY" = "$REPO_PLANTILLA" ]; then
               echo "::notice::No hay secrets configurados ($faltan ). No hay digest que mandar: esto es lo esperado en el repo plantilla. Tu fork corre con TUS secrets."
-              echo "Salteando el envio. Las pruebas igual corren para verificar que el codigo sirve."
+              echo "Salteando el envio. Las pruebas igual corren, asi se ve que el codigo funciona."
               exit 0
             fi
-            # Corrida manual: aca SI queremos el error rojo, porque es el paso
-            # que el README manda a hacer despues de cargar los secrets.
+            # En el fork de un estudiante SI queremos el error rojo: es la senal
+            # de que falta el paso 2 del README (cargar los tres secrets).
             echo "::error::Faltan secrets:$faltan . Cargalos en Settings > Secrets and variables > Actions."
             exit 1
           fi
